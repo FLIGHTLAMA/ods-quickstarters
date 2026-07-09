@@ -1,17 +1,20 @@
 #!/usr/bin/env python
-from flask import Flask, jsonify
-from flask_wtf import CSRFProtect
+from fastapi import FastAPI
 
-app = Flask(__name__)
-csrf: CSRFProtect = CSRFProtect()
-csrf.init_app(app)
+app = FastAPI()
 
 
-@app.route('/', methods=['GET'])
-def hello_world():
-    return jsonify({'msg': 'hello world!'}), 200
+@app.get('/')
+def hello_world() -> dict:
+    return {'msg': 'hello world!'}
+
+
+@app.get('/health')
+def health() -> dict:
+    return {'status': 'ok'}
 
 
 # local development ($ python src/main.py)
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)

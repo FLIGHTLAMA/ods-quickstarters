@@ -1,9 +1,10 @@
-componentID: python-flask-iq-test
+componentID: python-fastapi-iq-test
 steps:
   - type: provision
     provisionParams:
       verify:
         jenkinsStages: golden/jenkins-provision-stages.json
+
   - type: build
     buildParams:
       verify:
@@ -12,67 +13,86 @@ steps:
           - sonarqube-report-{{.ProjectID}}-{{.ComponentID}}.pdf
         testResults: 1
         openShiftResources:
-          imageTags:
-            - name: "{{.ComponentID}}"
-              tag: latest
           imageStreams:
-            - "{{.ComponentID}}"
-          deploymentConfigs:
             - "{{.ComponentID}}"
           services:
             - "{{.ComponentID}}"
-  # Step 3: Wait for deployment to be ready
+          deployments:
+            - "{{.ComponentID}}"
+
+  # Step 3: Wait for Helm deployment to complete
+  - type: wait
+    description: Wait for FastAPI deployment to be ready
+    waitParams:
+      condition: deployment-complete
+      resource: "deployment/{{.ComponentID}}"
+      namespace: "{{.ProjectID}}-dev"
+      timeout: "5m"
+      interval: "5s"
+
+  # Step 4: Wait for pod to be ready
   - type: wait
     description: Wait for application pod to be ready
     waitParams:
       condition: pod-ready
-      resource: "-l app={{.ProjectID}}-{{.ComponentID}}"
+      resource: "-l app.kubernetes.io/name={{.ComponentID}}"
       namespace: "{{.ProjectID}}-dev"
-      timeout: "300s"
+      timeout: "3m"
       interval: "5s"
 
-  # Step 4: Verify logs don't contain errors (NEW)
+  # Step 5: Inspect container logs for successful uvicorn startup
   - type: inspect
-    description: Verify container logs
+    description: Verify uvicorn started successfully
     inspectParams:
-      resource: "deploymentconfig/{{.ComponentID}}"
+      resource: "deployment/{{.ComponentID}}"
       namespace: "{{.ProjectID}}-dev"
       checks:
         logs:
           contains:
-            - "Starting gunicorn 23.0.0"
-            - "Listening at: http://0.0.0.0:8080"
-            - "Using worker: sync"
-            - "Booting worker with pid:"
+            - "Started server process"
+            - "Waiting for application startup"
+            - "Application startup complete"
+            - "Uvicorn running on"
           notContains:
-            - "panic:"
-            - "fatal error"
             - "ERROR"
+            - "fatal error"
 
-  # Step 5: Expose services
-  - type: "expose-service"
-    description: "Expose service with defaults"
+  # Step 6: Expose service for testing
+  - type: expose-service
+    description: Make FastAPI service accessible for tests
     exposeServiceParams:
       services:
         - serviceName: "{{.ComponentID}}"
+          namespace: "{{.ProjectID}}-dev"
+          port: "8080"
 
-  # Step 6: Test health endpoint
+  # Step 7: Test health endpoint with retry
   - type: http
     description: Verify health endpoint returns 200
+    retry:
+      attempts: 10
+      delay: "5s"
+      onlyTransient: true
     httpParams:
-      url: "http://{{.ComponentID}}.{{.ProjectID}}-dev.svc.cluster.local:8080/"
+      url: "http://{{.ComponentID}}.{{.ProjectID}}-dev.svc.cluster.local:8080/health"
       method: GET
       expectedStatus: 200
       expectedBody: "functional/api/health-response.json"
       timeout: 30
-      retry:
-        attempts: 10
-        delay: "5s"
 
-  # Step 7: Run integration smoke tests
+  # Step 8: Test root endpoint
+  - type: http
+    description: Verify root endpoint returns hello world
+    httpParams:
+      url: "http://{{.ComponentID}}.{{.ProjectID}}-dev.svc.cluster.local:8080/"
+      method: GET
+      expectedStatus: 200
+      timeout: 30
+
+  # Step 9: Run integration smoke tests
   - type: run
     description: Run integration smoke tests
     runParams:
-      file: "functional/integration/smoke_test.sh"      
-      services: 
-        app: "{{.ComponentID}}"    
+      file: "functional/integration/smoke_test.sh"
+      services:
+        app: "{{.ComponentID}}"
