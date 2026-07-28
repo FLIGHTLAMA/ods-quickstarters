@@ -1,4 +1,4 @@
-# Python FastAPI Quickstarter (be-python-flask)
+# Python FastAPI Quickstarter (be-python-fast-api)
 
 Documentation is located in our [official documentation](https://www.opendevstack.org/ods-documentation/ods-quickstarters/latest/index.html)
 
